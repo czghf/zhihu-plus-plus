@@ -1,4 +1,7 @@
+@file:OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
+
 import buildlogic.gitHash
+import kotlin.io.encoding.Base64
 import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 
@@ -71,8 +74,9 @@ android {
         }
     }
 
+    // 签名配置
     signingConfigs {
-        // 固定的 release 签名配置，使用 CI 中生成的 zhihu.jks
+        // 固定的 release 签名配置
         create("release") {
             storeFile = file("zhihu.jks")
             storePassword = "android"
@@ -83,14 +87,9 @@ android {
         // 保留通过环境变量动态注入签名的能力
         if (System.getenv("signingKey") != null) {
             register("env") {
-                storeFile = file("zhihu.jks")
-                    .apply {
-                        writeBytes(
-                            kotlin.io.encoding.Base64.decode(
-                                System.getenv("signingKey")
-                            )
-                        )
-                    }
+                storeFile = file("zhihu.jks").apply {
+                    writeBytes(Base64.decode(System.getenv("signingKey")))
+                }
                 storePassword = System.getenv("keyStorePassword")
                 keyAlias = System.getenv("keyAlias")
                 keyPassword = System.getenv("keyPassword")
@@ -264,8 +263,6 @@ dependencies {
 
     // HanLP for Chinese NLP
     "fullImplementation"("com.hankcs:hanlp:portable-1.8.4")
-//    implementation("com.halilibo.compose-richtext:richtext-ui-material3-android:1.0.0-alpha03")
-//    implementation("com.halilibo.compose-richtext:richtext-markdown-android:1.0.0-alpha03")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("io.ktor:ktor-client-cio:$ktor")
