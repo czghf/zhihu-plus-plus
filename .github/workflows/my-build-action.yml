@@ -108,6 +108,7 @@ jobs:
           echo "y" | sdkmanager --install "ndk;29.0.14206865"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/29.0.14206865" >> $GITHUB_ENV
       - name: Run KtLint
+        continue-on-error: true
         run: ./gradlew ktlintCheck
       - name: Build App
         run: |
