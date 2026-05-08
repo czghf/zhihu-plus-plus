@@ -105,8 +105,8 @@ jobs:
       - name: Build App
         # Build .apk
         run: |
-          bash ./gradlew ${{inputs.args}} assembleFullRelease
-          bash ./gradlew ${{inputs.args}} assembleLiteRelease
+          bash ./gradlew ${{inputs.args}} assembleFullDebug
+          bash ./gradlew ${{inputs.args}} assembleLiteDebug
         env:
           signingKey: ${{ secrets.ANDROID_SIGNING_KEY }}
           keyAlias: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -116,24 +116,25 @@ jobs:
       - name: Move files
         run: |
           mkdir -p app/build/upload
-          mv app/build/outputs/apk/full/release/app-full-release.apk app/build/upload/zhihu++-full.apk
-          mv app/build/outputs/apk/lite/release/app-lite-release.apk app/build/upload/zhihu++-lite.apk
-      - name: Recompress APK
-        if: ${{ inputs.minify }}
-        env:
-          KEYSTORE_PATH: ../app/zhihu.jks
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          APKSIGNER_PATH: /usr/local/lib/android/sdk/build-tools/35.0.0/apksigner
-        run: |
-          cd apk-recompress
-          echo "Recompressing Lite APK with Rust tool"
-          cargo run --release -- \
-            -i ../app/build/upload/zhihu++-lite.apk \
-            -o ./zhihu++-lite.apk
-          echo "Moving recompressed Lite APK to upload directory"
-          mv ./zhihu++-lite.apk ../app/build/upload/zhihu++-lite.apk
+          mv app/build/outputs/apk/full/debug/app-full-debug.apk app/build/upload/zhihu++-full.apk
+          mv app/build/outputs/apk/lite/debug/app-lite-debug.apk app/build/upload/zhihu++-lite.apk
+      # Recompress step is commented out to avoid signing issues with debug builds
+      # - name: Recompress APK
+      #   if: ${{ inputs.minify }}
+      #   env:
+      #     KEYSTORE_PATH: ../app/zhihu.jks
+      #     KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      #     KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      #     KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      #     APKSIGNER_PATH: /usr/local/lib/android/sdk/build-tools/35.0.0/apksigner
+      #   run: |
+      #     cd apk-recompress
+      #     echo "Recompressing Lite APK with Rust tool"
+      #     cargo run --release -- \
+      #       -i ../app/build/upload/zhihu++-lite.apk \
+      #       -o ./zhihu++-lite.apk
+      #     echo "Moving recompressed Lite APK to upload directory"
+      #     mv ./zhihu++-lite.apk ../app/build/upload/zhihu++-lite.apk
 
       - name: Compress lite mapping file
         if: ${{ inputs.minify }}
@@ -212,4 +213,3 @@ jobs:
             app/build/upload/zhihu++-full.apk
           fail_on_unmatched_files: true
           prerelease: false
-
