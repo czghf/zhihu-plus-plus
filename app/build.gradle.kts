@@ -1,10 +1,6 @@
-@file:OptIn(ExperimentalEncodingApi::class)
-
 import buildlogic.gitHash
 import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 plugins {
     id("com.android.application")
@@ -65,7 +61,9 @@ android {
         localeFilters += listOf("en", "zh")
     }
 
-    sourceSets.getByName("androidTest").assets.srcDir(layout.buildDirectory.dir("generated/androidTestSecrets"))
+    sourceSets.getByName("androidTest").assets.srcDir(
+        layout.buildDirectory.dir("generated/androidTestSecrets")
+    )
 
     testOptions {
         unitTests {
@@ -73,45 +71,48 @@ android {
         }
     }
 
-    // ========== 👇 修改点 1/2：signingConfigs 固定签名配置 ==========
     signingConfigs {
-        // 新增一个固定的 release 签名配置，使用我们生成的 zhihu.jks
+        // 固定的 release 签名配置，使用 CI 中生成的 zhihu.jks
         create("release") {
             storeFile = file("zhihu.jks")
-            storePassword = "android"     // 与工作流中生成的一致
-            keyAlias = "zhihu"            // 与工作流中生成的一致
-            keyPassword = "android"       // 与工作流中生成的一致
+            storePassword = "android"
+            keyAlias = "zhihu"
+            keyPassword = "android"
         }
 
-        // 保留原作者通过环境变量动态注入签名的能力（不影响我们）
+        // 保留通过环境变量动态注入签名的能力
         if (System.getenv("signingKey") != null) {
             register("env") {
-                storeFile = file("zhihu.jks").apply {
-                    writeBytes(Base64.decode(System.getenv("signingKey")))
-                }
+                storeFile = file("zhihu.jks")
+                    .apply {
+                        writeBytes(
+                            kotlin.io.encoding.Base64.decode(
+                                System.getenv("signingKey")
+                            )
+                        )
+                    }
                 storePassword = System.getenv("keyStorePassword")
                 keyAlias = System.getenv("keyAlias")
                 keyPassword = System.getenv("keyPassword")
             }
         }
     }
-    // ========== 修改结束 ==========
 
     buildTypes {
         val gitHash = gitHash(rootProject.projectDir)
         debug {
             buildConfigField("String", "GIT_HASH", "\"$gitHash\"")
         }
-        // ========== 👇 修改点 2/2：release 构建类型固定使用 release 签名 ==========
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             buildConfigField("String", "GIT_HASH", "\"$gitHash\"")
-            // 直接使用我们上面定义的 release 签名配置
             signingConfig = signingConfigs.getByName("release")
         }
-        // ========== 修改结束 ==========
     }
 
     compileOptions {
@@ -129,16 +130,15 @@ android {
 
     packaging {
         resources {
-            excludes +=
-                listOf(
-                    "META-INF/DEPENDENCIES",
-                    "META-INF/**/LICENSE",
-                    "META-INF/**/LICENSE.txt",
-                    "META-INF/proguard/*",
-                    "**.kotlin_module",
-                    "kotlin-tooling-metadata.json",
-                    "DebugProbesKt.bin",
-                )
+            excludes += listOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/**/LICENSE",
+                "META-INF/**/LICENSE.txt",
+                "META-INF/proguard/*",
+                "**.kotlin_module",
+                "kotlin-tooling-metadata.json",
+                "DebugProbesKt.bin",
+            )
         }
     }
 
@@ -146,11 +146,10 @@ android {
         beforeVariants(selector().all()) { variantBuilder ->
             val flavorName = variantBuilder.flavorName
             if (variantBuilder.buildType == "release") {
-                val minify =
-                    when (flavorName) {
-                        "lite" -> true
-                        else -> false
-                    }
+                val minify = when (flavorName) {
+                    "lite" -> true
+                    else -> false
+                }
                 variantBuilder.isMinifyEnabled = minify
                 variantBuilder.shrinkResources = minify
             }
@@ -158,4 +157,122 @@ android {
     }
 }
 
-// ... 后面依赖部分完全不变，无需修改 ...
+val generatedAndroidTestSecretsDir = layout.buildDirectory.dir("generated/androidTestSecrets")
+
+val prepareAndroidTestSecretAccount by tasks.registering {
+    val secretAccountFile = rootProject.file(".secret/account.json")
+    outputs.dir(generatedAndroidTestSecretsDir)
+    doLast {
+        val outputDir = generatedAndroidTestSecretsDir.get().asFile
+        delete(outputDir)
+        if (secretAccountFile.exists()) {
+            copy {
+                from(secretAccountFile)
+                into(outputDir.resolve("secret"))
+                rename { "account.json" }
+            }
+        }
+    }
+}
+
+tasks
+    .matching {
+        it.name.startsWith("merge") && it.name.contains("AndroidTestAssets")
+    }.configureEach {
+        dependsOn(prepareAndroidTestSecretAccount)
+    }
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
+    compilerOptions.freeCompilerArgs.add("-Xdebug")
+}
+
+tasks.withType<Test>().configureEach {
+    javaLauncher.set(
+        javaToolchains.launcherFor {
+            languageVersion.set(JavaLanguageVersion.of(21))
+        },
+    )
+}
+
+val ktor = "3.4.1"
+val coil = "3.4.0"
+val aboutLibraries = "14.0.1"
+dependencies {
+    implementation("androidx.preference:preference:1.2.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("io.ktor:ktor-client-core-jvm:$ktor")
+    implementation("io.ktor:ktor-client-android:$ktor")
+    implementation("io.ktor:ktor-client-content-negotiation-jvm:$ktor")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:$ktor")
+    implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.7.1")
+    //noinspection GradleDependency
+    implementation("androidx.browser:browser:1.8.0")
+
+    implementation("io.github.zly2006:markdown-parser-android:0.0.1-alpha.4")
+    implementation("io.github.zly2006:markdown-renderer-android:0.0.1-alpha.4")
+
+    implementation("io.coil-kt.coil3:coil-compose:$coil")
+    implementation("io.coil-kt.coil3:coil-network-ktor3-android:$coil")
+    implementation("io.coil-kt.coil3:coil-gif:$coil")
+    implementation("io.coil-kt.coil3:coil-svg:$coil")
+
+    implementation("com.google.android.material:material:1.13.0")
+    implementation("com.materialkolor:material-kolor:4.1.1")
+
+    implementation("org.jsoup:jsoup:1.22.1")
+    implementation("androidx.legacy:legacy-support-v4:1.0.0")
+
+    // ZXing for QR code scanning
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+
+    implementation("androidx.core:core-ktx:1.17.0")
+    implementation("com.google.android.material:material:1.13.0")
+    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
+    //noinspection GradleDependency
+    implementation("androidx.navigation:navigation-ui-ktx:2.9.2")
+    implementation("androidx.webkit:webkit:1.14.0")
+    implementation("androidx.activity:activity-compose:1.12.1")
+    implementation(platform("androidx.compose:compose-bom:2025.12.00"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.material:material-icons-extended")
+    //noinspection GradleDependency
+    implementation("androidx.navigation:navigation-compose:2.9.2")
+    //noinspection GradleDependency
+    implementation("androidx.compose.animation:animation:1.8.2")
+    //noinspection GradleDependency
+    implementation("androidx.compose.animation:animation-core:1.8.2")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("com.mikepenz:aboutlibraries-compose-m3:$aboutLibraries")
+    implementation("androidx.room:room-common-jvm:2.8.4")
+    implementation("androidx.room:room-runtime-android:2.8.4")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+    annotationProcessor("androidx.room:room-compiler:2.8.4")
+    ksp("androidx.room:room-compiler:2.8.4")
+    "fullImplementation"(project(":sentence_embeddings"))
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-tooling-preview")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2025.12.00"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    implementation("com.github.chrisbanes:PhotoView:2.0.0") {
+        exclude(group = "com.android.support")
+    }
+
+    // HanLP for Chinese NLP
+    "fullImplementation"("com.hankcs:hanlp:portable-1.8.4")
+//    implementation("com.halilibo.compose-richtext:richtext-ui-material3-android:1.0.0-alpha03")
+//    implementation("com.halilibo.compose-richtext:richtext-markdown-android:1.0.0-alpha03")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("io.ktor:ktor-client-cio:$ktor")
+    testImplementation("io.ktor:ktor-client-content-negotiation:$ktor")
+    testImplementation("io.ktor:ktor-serialization-kotlinx-json:$ktor")
+    //noinspection GradleDependency
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+    androidTestImplementation("io.ktor:ktor-client-mock:$ktor")
+}
